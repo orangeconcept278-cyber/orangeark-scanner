@@ -172,6 +172,16 @@
   .empty{text-align:center;padding:48px 20px;color:var(--mid);}
   .empty .ei{font-size:48px;margin-bottom:10px;}
   .empty h3{font-size:16px;margin-bottom:5px;color:var(--dark);}
+
+  /* API KEY BANNER */
+  .apikey-banner{background:linear-gradient(135deg,#1A1208,#5C4A35);border-radius:var(--radius);padding:16px 20px;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px;flex-wrap:wrap;}
+  .apikey-banner h3{font-size:14px;font-weight:600;margin-bottom:3px;}
+  .apikey-banner p{font-size:12px;opacity:.75;}
+  .apikey-input-wrap{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .apikey-input{padding:9px 12px;border:1.5px solid rgba(255,255,255,.3);border-radius:8px;background:rgba(255,255,255,.1);color:#fff;font-family:'DM Mono',monospace;font-size:12px;width:320px;max-width:100%;}
+  .apikey-input::placeholder{color:rgba(255,255,255,.4);}
+  .apikey-input:focus{outline:none;border-color:var(--orange-light);}
+  .apikey-set-ok{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#4ADE80;font-weight:600;}
 </style>
 </head>
 <body>
@@ -201,6 +211,23 @@
 
   <!-- ===== SCAN ===== -->
   <div class="panel active" id="tab-scan">
+    <!-- API KEY BANNER -->
+    <div class="apikey-banner" id="apikeyBanner">
+      <div>
+        <h3>🔑 Claude APIキーを設定してください</h3>
+        <p>AIでレシートを読み取るために必要です。キーはこのブラウザにのみ保存されます。</p>
+      </div>
+      <div class="apikey-input-wrap">
+        <input type="password" class="apikey-input" id="apikeyInput" placeholder="sk-ant-api03-...">
+        <button class="btn btn-p btn-sm" onclick="saveApiKey()">保存</button>
+      </div>
+    </div>
+    <div id="apikeyOk" style="display:none;margin-bottom:16px;">
+      <span class="apikey-set-ok">✅ Claude APIキー設定済み
+        <button onclick="clearApiKey()" style="background:none;border:none;color:var(--mid);font-size:12px;cursor:pointer;margin-left:8px;">変更する</button>
+      </span>
+    </div>
+
     <div class="stitle">📸 レシート・請求書を読み込む</div>
     <div class="tabs" style="margin-bottom:16px;background:#E8D9C8;">
       <button class="tab active" id="iup" onclick="switchMode('upload')">📁 ファイル選択</button>
@@ -436,6 +463,27 @@ const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const ROOT_FOLDER = 'JDLdata';
 
 // ============================================================
+// API KEY MANAGEMENT
+// ============================================================
+function getApiKey(){ return localStorage.getItem('claude_api_key') || ''; }
+function saveApiKey(){
+  const k = document.getElementById('apikeyInput').value.trim();
+  if(!k || !k.startsWith('sk-ant-')){ toast('正しいAPIキーを入力してください（sk-ant-で始まる）','e'); return; }
+  localStorage.setItem('claude_api_key', k);
+  updateApiKeyUI();
+  toast('✅ APIキーを保存しました','s');
+}
+function clearApiKey(){
+  localStorage.removeItem('claude_api_key');
+  updateApiKeyUI();
+}
+function updateApiKeyUI(){
+  const key = getApiKey();
+  document.getElementById('apikeyBanner').style.display = key ? 'none' : 'flex';
+  document.getElementById('apikeyOk').style.display = key ? 'block' : 'none';
+}
+
+// ============================================================
 // MASTER DATA
 // ============================================================
 const DB = {
@@ -469,6 +517,7 @@ let imgB64 = null, imgMime = 'image/jpeg', camStream = null, editIdx = null;
   popSel('fdb', DB); popSel('fcr', CB);
   popSel('mdb', DB); popSel('mcr', CB);
   updateDriveUI();
+  updateApiKeyUI();
   initExpDates();
   if(userInfo) renderUser();
   // Update drive path preview on form changes
@@ -730,6 +779,13 @@ function setPill(s,t){
 // ============================================================
 async function analyze(){
   if(!imgB64) return;
+  const apiKey = getApiKey();
+  if(!apiKey){
+    toast('Claude APIキーを設定してください','e');
+    document.getElementById('apikeyBanner').style.display='flex';
+    document.getElementById('apikeyInput').focus();
+    return;
+  }
   showLoad('AIがレシートを解析中...');
   const sys = `あなたはOrangeArk（株式会社オレンジアーク）の経理AIです。
 書類画像から会計データを抽出し、必ずJSONのみで返答してください。
@@ -761,7 +817,12 @@ JSONフォーマット（このキーのみ）:
 
   try{
     const res = await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method:'POST', headers:{
+        'Content-Type':'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
       body: JSON.stringify({
         model:'claude-sonnet-4-20250514', max_tokens:700, system:sys,
         messages:[{role:'user',content:[
